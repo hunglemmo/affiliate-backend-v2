@@ -10,7 +10,17 @@ const User = require('./models/User'); // Import User model
 const app = express();
 
 // Middleware
-app.use(cors());
+// Cấu hình CORS để chỉ cho phép các domain cụ thể
+const corsOptions = {
+    origin: [
+        'http://localhost:3000', // Cho phép app React khi chạy local
+        'http://localhost:3001', // Cho phép app React khi chạy local ở cổng khác
+        // SAU NÀY KHI BẠN DEPLOY FRONTEND, HÃY THÊM URL CỦA NÓ VÀO ĐÂY
+        // ví dụ: 'https://affiliate-frontend-abcd.vercel.app' 
+    ]
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // --- KẾT NỐI CƠ SỞ DỮ LIỆU MONGODB ---
