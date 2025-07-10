@@ -37,7 +37,34 @@ const spreadsheetId = process.env.SPREADSHEET_ID;
 // --- CÁC API ENDPOINTS ---
 
 // 1. API lấy offers (Giữ nguyên)
-app.get('/api/offers', async (req, res) => { /* ... */ });
+app.get('/api/offers', async (req, res) => {
+  try {
+    const queryParams = req.query;
+
+    const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
+      headers: {
+        'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}`
+      },
+      params: queryParams,
+      timeout: 15000 // THÊM DÒNG NÀY: Tự ngắt kết nối sau 15 giây nếu AccessTrade không trả lời
+    });
+
+    res.status(200).json(response.data);
+
+  } catch (error) {
+    // Thêm logic để xử lý lỗi timeout một cách rõ ràng hơn
+    if (error.code === 'ECONNABORTED') {
+      console.error('AccessTrade API timed out.');
+      return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade. Vui lòng thử lại sau.' });
+    }
+    
+    console.error('Error calling AccessTrade API:', error.message);
+    res.status(500).json({
+      message: 'Lỗi khi kết nối đến AccessTrade từ server.',
+      error: error.message
+    });
+  }
+});
 
 // 2. API ĐĂNG KÝ (Nâng cấp)
 app.post('/api/register', async (req, res) => {
