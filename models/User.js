@@ -11,6 +11,10 @@ const UserSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true
+    },
+    referralCode: {
+        type: String,
+        unique: true
     }
 }, { timestamps: true });
 
