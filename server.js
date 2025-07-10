@@ -3,7 +3,7 @@ const axios = require('axios');
 const cors = require('cors');
 require('dotenv').config();
 const { google } = require('googleapis');
-const { OAuth2Client } = require('google-auth-library'); // Thêm thư viện Google Auth
+const { OAuth2Client } = require('google-auth-library');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const User = require('./models/User');
@@ -85,14 +85,14 @@ app.post('/api/login', async (req, res) => {
         res.status(200).json({ 
             success: true, 
             message: 'Đăng nhập thành công',
-            user: { id: user._id, username: user.username, referralCode: user.referralCode }
+            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
     }
 });
 
-// 4. API ĐĂNG NHẬP BẰNG GOOGLE
+// 4. API Đăng nhập bằng Google
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     try {
@@ -102,34 +102,19 @@ app.post('/api/auth/google', async (req, res) => {
         });
         const payload = ticket.getPayload();
         const { sub: googleId, email } = payload;
-
         let user = await User.findOne({ googleId });
-
         if (!user) {
-            // Nếu người dùng không tồn tại, kiểm tra xem email đã được dùng chưa
             let userByEmail = await User.findOne({ username: email });
-            if (userByEmail) {
-                // Email đã được dùng để đăng ký tài khoản thường -> báo lỗi
-                return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
-            }
-
-            // Tạo người dùng mới
+            if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-            user = new User({
-                username: email,
-                googleId: googleId,
-                referralCode: uniqueReferralCode
-            });
+            user = new User({ username: email, googleId: googleId, referralCode: uniqueReferralCode });
             await user.save();
         }
-        
-        // Trả về thông tin user để đăng nhập
         res.status(200).json({
             success: true,
             message: 'Đăng nhập thành công',
-            user: { id: user._id, username: user.username, referralCode: user.referralCode }
+            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins }
         });
-
     } catch (error) {
         res.status(400).json({ success: false, message: 'Xác thực Google thất bại.' });
     }
@@ -152,6 +137,39 @@ app.post('/api/withdraw', async (req, res) => {
         res.status(200).json({ success: true, message: "Yêu cầu rút tiền đã được gửi thành công!" });
     } catch (error) {
         res.status(500).json({ success: false, message: "Có lỗi xảy ra khi gửi yêu cầu." });
+    }
+});
+
+// 6. API để người dùng tự cập nhật số xu
+app.post('/api/user/update-coins', async (req, res) => {
+    const { userId, newCoins } = req.body;
+    if (!userId || newCoins === undefined) {
+        return res.status(400).json({ success: false, message: 'Thiếu thông tin.' });
+    }
+    try {
+        await User.findByIdAndUpdate(userId, { coins: newCoins });
+        res.status(200).json({ success: true, message: 'Cập nhật xu thành công.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
+    }
+});
+
+// 7. API để Admin cộng xu
+app.post('/api/admin/add-coins', async (req, res) => {
+    const { targetUsername, amount, adminKey } = req.body;
+    if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+        return res.status(403).json({ success: false, message: 'Không có quyền truy cập.' });
+    }
+    try {
+        const user = await User.findOneAndUpdate(
+            { username: targetUsername },
+            { $inc: { coins: amount } },
+            { new: true }
+        );
+        if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng mục tiêu.' });
+        res.status(200).json({ success: true, message: `Đã cộng ${amount} xu cho ${targetUsername}. Số dư mới: ${user.coins}` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
 });
 

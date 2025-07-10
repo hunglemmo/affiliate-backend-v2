@@ -10,24 +10,25 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        // Mật khẩu chỉ bắt buộc khi người dùng không đăng ký bằng Google
         required: function() { return !this.googleId; }
     },
-    // Thêm trường mới để lưu ID từ Google
     googleId: {
         type: String,
-        sparse: true, // Cho phép nhiều giá trị null, nhưng các giá trị có thật phải là duy nhất
+        sparse: true,
         unique: true
     },
     referralCode: {
         type: String,
         unique: true
+    },
+    coins: {
+        type: Number,
+        default: 100 // Số xu mặc định khi đăng ký mới
     }
 }, { timestamps: true });
 
-// Mã hóa mật khẩu trước khi lưu vào database
+// Mã hóa mật khẩu trước khi lưu
 UserSchema.pre('save', async function(next) {
-    // Chỉ mã hóa nếu mật khẩu được thay đổi (hoặc là người dùng mới) và có tồn tại
     if (!this.isModified('password') || !this.password) {
         return next();
     }
