@@ -10,7 +10,14 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true
+        // Mật khẩu chỉ bắt buộc khi người dùng không đăng ký bằng Google
+        required: function() { return !this.googleId; }
+    },
+    // Thêm trường mới để lưu ID từ Google
+    googleId: {
+        type: String,
+        sparse: true, // Cho phép nhiều giá trị null, nhưng các giá trị có thật phải là duy nhất
+        unique: true
     },
     referralCode: {
         type: String,
@@ -20,7 +27,8 @@ const UserSchema = new mongoose.Schema({
 
 // Mã hóa mật khẩu trước khi lưu vào database
 UserSchema.pre('save', async function(next) {
-    if (!this.isModified('password')) {
+    // Chỉ mã hóa nếu mật khẩu được thay đổi (hoặc là người dùng mới) và có tồn tại
+    if (!this.isModified('password') || !this.password) {
         return next();
     }
     const salt = await bcrypt.genSalt(10);
