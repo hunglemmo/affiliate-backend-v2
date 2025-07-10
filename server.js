@@ -9,19 +9,21 @@ const User = require('./models/User'); // Import User model
 
 const app = express();
 
-// Middleware
-// Cấu hình CORS để chỉ cho phép các domain cụ thể
+// --- Cấu hình Middleware ---
+const whitelist = ['http://localhost:3000', 'http://localhost:3001'];
 const corsOptions = {
-    origin: [
-        'http://localhost:3000', // Cho phép app React khi chạy local
-        'http://localhost:3001', // Cho phép app React khi chạy local ở cổng khác
-        // SAU NÀY KHI BẠN DEPLOY FRONTEND, HÃY THÊM URL CỦA NÓ VÀO ĐÂY
-        // ví dụ: 'https://affiliate-frontend-abcd.vercel.app' 
-    ]
+  origin: function (origin, callback) {
+    // Cho phép các request không có origin (ví dụ: app mobile, Postman) hoặc origin nằm trong whitelist
+    if (!origin || whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
 };
 
-app.use(cors(corsOptions));
-app.use(express.json());
+app.use(cors(corsOptions)); // Cấu hình CORS mới
+app.use(express.json());   // Middleware để đọc JSON body
 
 // --- KẾT NỐI CƠ SỞ DỮ LIỆU MONGODB ---
 mongoose.connect(process.env.MONGODB_URI)
