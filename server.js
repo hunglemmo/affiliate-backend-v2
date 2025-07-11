@@ -37,6 +37,16 @@ const googleSheetsAuth = new google.auth.GoogleAuth({
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const googleAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+// --- HÀM HỖ TRỢ ---
+const isSameDay = (date1, date2) => {
+    if (!date1 || !date2) return false;
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+};
+
 
 // --- CÁC API ENDPOINTS ---
 
@@ -82,10 +92,11 @@ app.post('/api/login', async (req, res) => {
         if (!user) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
+        const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
         res.status(200).json({ 
             success: true, 
             message: 'Đăng nhập thành công',
-            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins }
+            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
@@ -110,10 +121,11 @@ app.post('/api/auth/google', async (req, res) => {
             user = new User({ username: email, googleId: googleId, referralCode: uniqueReferralCode });
             await user.save();
         }
+        const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
         res.status(200).json({
             success: true,
             message: 'Đăng nhập thành công',
-            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins }
+            user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
         res.status(400).json({ success: false, message: 'Xác thực Google thất bại.' });
@@ -122,49 +134,47 @@ app.post('/api/auth/google', async (req, res) => {
     
 // 5. API để xử lý yêu cầu rút tiền
 app.post('/api/withdraw', async (req, res) => {
-    const { bank, accountNumber, accountName, amount } = req.body;
+    const { bank, accountNumber, accountName, amount, userId } = req.body;
     try {
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
+        if (user.coins < amount) return res.status(400).json({ success: false, message: 'Số dư không đủ.' });
+
         const client = await googleSheetsAuth.getClient();
         const googleSheets = google.sheets({ version: "v4", auth: client });
-
-        const newRow = [
-            new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }),
-            bank,
-            accountNumber,
-            accountName,
-            amount,
-            'Pending'
-        ];
-        
-        const sheetName = "Trang tính1"; 
-
+        const newRow = [ new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }), bank, accountNumber, accountName, amount, 'Pending' ];
+        const sheetName = "Trang tính1";
         await googleSheets.spreadsheets.values.append({
-            auth: googleSheetsAuth, 
+            auth: googleSheetsAuth,
             spreadsheetId,
             range: `${sheetName}!A:F`,
             valueInputOption: "USER_ENTERED",
-            resource: {
-                values: [newRow],
-            },
+            resource: { values: [newRow] },
         });
         
+        user.coins -= amount;
+        await user.save();
+        
         res.status(200).json({ success: true, message: "Yêu cầu rút tiền đã được gửi thành công!" });
-
     } catch (error) {
         console.error("Lỗi khi ghi vào Google Sheet:", error.message);
         res.status(500).json({ success: false, message: "Có lỗi xảy ra khi ghi dữ liệu vào Google Sheet." });
     }
 });
 
-// 6. API để người dùng tự cập nhật số xu
-app.post('/api/user/update-coins', async (req, res) => {
-    const { userId, newCoins } = req.body;
-    if (!userId || newCoins === undefined) {
-        return res.status(400).json({ success: false, message: 'Thiếu thông tin.' });
-    }
+// 6. API để người dùng nhận thưởng hàng ngày
+app.post('/api/user/claim-daily', async (req, res) => {
+    const { userId } = req.body;
     try {
-        await User.findByIdAndUpdate(userId, { coins: newCoins });
-        res.status(200).json({ success: true, message: 'Cập nhật xu thành công.' });
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
+        if (isSameDay(user.lastClaimedDaily, new Date())) {
+            return res.status(400).json({ success: false, message: 'Bạn đã nhận thưởng hôm nay rồi.' });
+        }
+        user.coins += 10;
+        user.lastClaimedDaily = new Date();
+        await user.save();
+        res.status(200).json({ success: true, newCoins: user.coins, message: 'Nhận thưởng thành công!' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }

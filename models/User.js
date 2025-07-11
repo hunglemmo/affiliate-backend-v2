@@ -2,29 +2,12 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
-    username: {
-        type: String,
-        required: true,
-        unique: true,
-        trim: true
-    },
-    password: {
-        type: String,
-        required: function() { return !this.googleId; }
-    },
-    googleId: {
-        type: String,
-        sparse: true,
-        unique: true
-    },
-    referralCode: {
-        type: String,
-        unique: true
-    },
-    coins: {
-        type: Number,
-        default: 100 // Số xu mặc định khi đăng ký mới
-    }
+    username: { type: String, required: true, unique: true, trim: true },
+    password: { type: String, required: function() { return !this.googleId; } },
+    googleId: { type: String, sparse: true, unique: true },
+    referralCode: { type: String, unique: true },
+    coins: { type: Number, default: 100 },
+    lastClaimedDaily: { type: Date } 
 }, { timestamps: true });
 
 // Mã hóa mật khẩu trước khi lưu
