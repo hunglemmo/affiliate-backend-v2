@@ -7,7 +7,12 @@ const UserSchema = new mongoose.Schema({
     googleId: { type: String, sparse: true, unique: true },
     referralCode: { type: String, unique: true },
     coins: { type: Number, default: 100 },
-    lastClaimedDaily: { type: Date } 
+    lastClaimedDaily: { type: Date },
+    // THÊM TRƯỜNG MỚI: Lưu danh sách ID của các offer yêu thích
+    favorites: {
+        type: [String],
+        default: []
+    }
 }, { timestamps: true });
 
 // Mã hóa mật khẩu trước khi lưu

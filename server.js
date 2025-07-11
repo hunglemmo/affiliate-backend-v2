@@ -210,17 +210,41 @@ app.post('/api/user/claim-daily', async (req, res) => {
     }
 });
 
-// 8. API để người dùng tự cập nhật số xu (dùng cho xem quảng cáo)
-app.post('/api/user/update-coins', async (req, res) => {
-    const { userId, newCoins } = req.body;
-    if (!userId || newCoins === undefined) {
-        return res.status(400).json({ success: false, message: 'Thiếu thông tin.' });
+// 8. API để người dùng nhận thưởng (ví dụ: xem quảng cáo)
+app.post('/api/user/add-coins', async (req, res) => { // Đổi tên API cho rõ nghĩa hơn
+    // 1. Nhận vào số xu cần cộng, không phải tổng mới
+    const { userId, amountToAdd } = req.body; 
+
+    if (!userId || !amountToAdd || amountToAdd <= 0) {
+        return res.status(400).json({ success: false, message: 'Thông tin không hợp lệ.' });
     }
+
+    // Giới hạn số xu có thể cộng trong một lần để tăng bảo mật
+    if (amountToAdd > 10) { // Ví dụ: chỉ cho phép cộng tối đa 10 xu mỗi lần xem quảng cáo
+        return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
+    }
+
     try {
-        await User.findByIdAndUpdate(userId, { coins: newCoins });
-        res.status(200).json({ success: true, message: 'Cập nhật xu thành công.' });
+        // 2. Dùng $inc để CỘNG DỒN một cách an toàn
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $inc: { coins: amountToAdd } },
+            { new: true } // Tùy chọn này để lệnh trả về tài liệu đã được cập nhật
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
+        }
+
+        // 3. Trả về số xu mới nhất từ server
+        res.status(200).json({
+            success: true,
+            message: `Bạn đã được cộng ${amountToAdd} xu!`,
+            newCoins: updatedUser.coins 
+        });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
+        res.status(500).json({ success: false, message: 'Lỗi máy chủ khi cập nhật xu.' });
     }
 });
 
