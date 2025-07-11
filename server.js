@@ -126,17 +126,33 @@ app.post('/api/withdraw', async (req, res) => {
     try {
         const client = await googleSheetsAuth.getClient();
         const googleSheets = google.sheets({ version: "v4", auth: client });
-        const newRow = [ new Date().toISOString(), bank, accountNumber, accountName, amount, 'Pending' ];
+
+        const newRow = [
+            new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }),
+            bank,
+            accountNumber,
+            accountName,
+            amount,
+            'Pending'
+        ];
+        
+        const sheetName = "Trang tính1"; 
+
         await googleSheets.spreadsheets.values.append({
-            auth: googleSheetsAuth,
+            auth: googleSheetsAuth, 
             spreadsheetId,
-            range: "Sheet1!A:F",
+            range: `${sheetName}!A:F`,
             valueInputOption: "USER_ENTERED",
-            resource: { values: [newRow] },
+            resource: {
+                values: [newRow],
+            },
         });
+        
         res.status(200).json({ success: true, message: "Yêu cầu rút tiền đã được gửi thành công!" });
+
     } catch (error) {
-        res.status(500).json({ success: false, message: "Có lỗi xảy ra khi gửi yêu cầu." });
+        console.error("Lỗi khi ghi vào Google Sheet:", error.message);
+        res.status(500).json({ success: false, message: "Có lỗi xảy ra khi ghi dữ liệu vào Google Sheet." });
     }
 });
 
