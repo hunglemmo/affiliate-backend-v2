@@ -81,7 +81,7 @@ app.get('/api/categories', async (req, res) => {
     try {
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
             headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
-            params: { limit: 200 },
+            params: { limit: 100 }, // SỬA LỖI: Giảm limit xuống 100 cho ổn định
             timeout: 20000
         });
         const offers = response.data.data || [];
@@ -93,6 +93,7 @@ app.get('/api/categories', async (req, res) => {
         });
         res.status(200).json({ success: true, platforms: [...platformDomains] });
     } catch (error) {
+        console.error("Lỗi khi lấy danh mục:", error.message);
         res.status(500).json({ success: false, message: 'Không thể lấy danh sách danh mục.' });
     }
 });
