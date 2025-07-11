@@ -10,7 +10,7 @@ const User = require('./models/User');
 
 const app = express();
 
-// Cấu hình Middleware
+// --- Cấu hình Middleware ---
 const whitelist = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost'];
 const corsOptions = {
   origin: function (origin, callback) {
@@ -24,12 +24,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Kết nối Cơ sở dữ liệu MongoDB
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('MongoDB Connected...'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
+// --- Kết nối Cơ sở dữ liệu MongoDB ---
+mongoose.connect(process.env.MONGODB_URI, {
+    serverSelectionTimeoutMS: 30000, // Tăng thời gian chờ chọn server lên 30 giây
+    socketTimeoutMS: 45000, // Tăng thời gian chờ cho các thao tác socket lên 45 giây
+})
+.then(() => console.log('MongoDB Connected...'))
+.catch(err => console.error('MongoDB Connection Error:', err));
 
-// Cấu hình Google
+// --- Cấu hình Google ---
 const googleSheetsAuth = new google.auth.GoogleAuth({
     credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
     scopes: "https://www.googleapis.com/auth/spreadsheets",
@@ -37,7 +40,7 @@ const googleSheetsAuth = new google.auth.GoogleAuth({
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const googleAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Hàm hỗ trợ
+// --- HÀM HỖ TRỢ ---
 const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     const d1 = new Date(date1);
@@ -47,9 +50,10 @@ const isSameDay = (date1, date2) => {
            d1.getDate() === d2.getDate();
 };
 
+
 // --- CÁC API ENDPOINTS ---
 
-// API lấy offers (ĐÃ CÓ PHÂN TRANG)
+// 1. API lấy offers (Đã có phân trang)
 app.get('/api/offers', async (req, res) => {
   try {
     const { page = 1, limit = 20, keyword = '' } = req.query;
@@ -72,7 +76,7 @@ app.get('/api/offers', async (req, res) => {
   }
 });
 
-// API MỚI: Lấy tất cả danh mục
+// 2. API Lấy tất cả danh mục
 app.get('/api/categories', async (req, res) => {
     try {
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
@@ -93,7 +97,7 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// 2. API để xử lý Đăng ký
+// 3. API để xử lý Đăng ký
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -109,7 +113,7 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// 3. API để xử lý Đăng nhập
+// 4. API để xử lý Đăng nhập
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -128,7 +132,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 4. API Đăng nhập bằng Google
+// 5. API Đăng nhập bằng Google
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     try {
@@ -157,7 +161,7 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
-// 5. API để xử lý yêu cầu rút tiền
+// 6. API để xử lý yêu cầu rút tiền
 app.post('/api/withdraw', async (req, res) => {
     const { bank, accountNumber, accountName, amount, userId } = req.body;
     try {
@@ -187,7 +191,7 @@ app.post('/api/withdraw', async (req, res) => {
     }
 });
 
-// 6. API để người dùng nhận thưởng hàng ngày
+// 7. API để người dùng nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', async (req, res) => {
     const { userId } = req.body;
     try {
@@ -205,7 +209,21 @@ app.post('/api/user/claim-daily', async (req, res) => {
     }
 });
 
-// 7. API để Admin cộng xu
+// 8. API để người dùng tự cập nhật số xu (dùng cho xem quảng cáo)
+app.post('/api/user/update-coins', async (req, res) => {
+    const { userId, newCoins } = req.body;
+    if (!userId || newCoins === undefined) {
+        return res.status(400).json({ success: false, message: 'Thiếu thông tin.' });
+    }
+    try {
+        await User.findByIdAndUpdate(userId, { coins: newCoins });
+        res.status(200).json({ success: true, message: 'Cập nhật xu thành công.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
+    }
+});
+
+// 9. API để Admin cộng xu
 app.post('/api/admin/add-coins', async (req, res) => {
     const { targetUsername, amount, adminKey } = req.body;
     if (adminKey !== process.env.ADMIN_SECRET_KEY) {
