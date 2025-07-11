@@ -10,8 +10,8 @@ const User = require('./models/User');
 
 const app = express();
 
-// --- Cấu hình Middleware ---
-const whitelist = ['http://localhost:3000', 'http://localhost:3001'];
+// Cấu hình Middleware
+const whitelist = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost'];
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || whitelist.indexOf(origin) !== -1) {
@@ -24,12 +24,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// --- Kết nối Cơ sở dữ liệu MongoDB ---
+// Kết nối Cơ sở dữ liệu MongoDB
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('MongoDB Connected...'))
     .catch(err => console.error('MongoDB Connection Error:', err));
 
-// --- Cấu hình Google ---
+// Cấu hình Google
 const googleSheetsAuth = new google.auth.GoogleAuth({
     credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
     scopes: "https://www.googleapis.com/auth/spreadsheets",
@@ -37,7 +37,7 @@ const googleSheetsAuth = new google.auth.GoogleAuth({
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const googleAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// --- HÀM HỖ TRỢ ---
+// Hàm hỗ trợ
 const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     const d1 = new Date(date1);
@@ -47,16 +47,20 @@ const isSameDay = (date1, date2) => {
            d1.getDate() === d2.getDate();
 };
 
-
 // --- CÁC API ENDPOINTS ---
 
-// 1. API để lấy offers từ AccessTrade
+// API lấy offers (ĐÃ CÓ PHÂN TRANG)
 app.get('/api/offers', async (req, res) => {
   try {
-    const queryParams = req.query;
+    const { page = 1, limit = 20, keyword = '' } = req.query;
+    const params = {
+      page,
+      limit,
+      ...(keyword && { keyword })
+    };
     const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
       headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
-      params: queryParams,
+      params: params,
       timeout: 15000
     });
     res.status(200).json(response.data);
@@ -66,6 +70,27 @@ app.get('/api/offers', async (req, res) => {
     }
     res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade từ server.', error: error.message });
   }
+});
+
+// API MỚI: Lấy tất cả danh mục
+app.get('/api/categories', async (req, res) => {
+    try {
+        const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
+            headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
+            params: { limit: 200 },
+            timeout: 20000
+        });
+        const offers = response.data.data || [];
+        const platformDomains = new Set();
+        offers.forEach(p => {
+            if (p.domain?.includes('shopee')) platformDomains.add('shopee');
+            if (p.domain?.includes('lazada')) platformDomains.add('lazada');
+            if (p.domain?.includes('tiki')) platformDomains.add('tiki');
+        });
+        res.status(200).json({ success: true, platforms: [...platformDomains] });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Không thể lấy danh sách danh mục.' });
+    }
 });
 
 // 2. API để xử lý Đăng ký
