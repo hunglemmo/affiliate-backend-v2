@@ -16,8 +16,9 @@ const whitelist = [
     'http://localhost:3000', // Cho frontend khi chạy ở local
     'http://localhost:3001', // Một cổng local khác (nếu có)
     'http://localhost',      // Cho ứng dụng Capacitor (một số trường hợp)
-    'capacitor://localhost', // *** SỬA LỖI: Thêm dòng này cho ứng dụng Capacitor trên máy ảo ***
-    'https://affiliate-frontend-cua-ban.vercel.app' // THAY THẾ: Bằng tên miền Vercel của frontend sau này
+    'capacitor://localhost', // *** Dòng quan trọng nhất cho app di động ***
+    // Bạn có thể thêm tên miền frontend của bạn ở đây sau này
+    // Ví dụ: 'https://ten-app-cua-ban.vercel.app' 
 ];
 
 const corsOptions = {
@@ -36,8 +37,8 @@ app.use(express.json());
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
 mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 30000, // Tăng thời gian chờ chọn server lên 30 giây
-    socketTimeoutMS: 45000, // Tăng thời gian chờ cho các thao tác socket lên 45 giây
+    serverSelectionTimeoutMS: 30000, 
+    socketTimeoutMS: 45000, 
 })
 .then(() => console.log('MongoDB Connected...'))
 .catch(err => console.error('MongoDB Connection Error:', err));
