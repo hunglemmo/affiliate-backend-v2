@@ -11,18 +11,16 @@ const User = require('./models/User');
 const app = express();
 
 // --- Cấu hình Middleware ---
-// DANH SÁCH CÁC ĐỊA CHỈ ĐƯỢC PHÉP TRUY CẬP API
 const whitelist = [
-    'http://localhost:3000', // Cho frontend khi chạy ở local
-    'http://localhost:3001', // Một cổng local khác (nếu có)
-    'http://localhost',      // Cho ứng dụng Capacitor (một số trường hợp)
-    'capacitor://localhost', // Cho ứng dụng Capacitor trên máy ảo
-    'https://localhost'      // *** SỬA LỖI: Thêm dòng này cho WebView an toàn ***
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost',
+    'capacitor://localhost',
+    'https://localhost'
 ];
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Cho phép các request không có origin (như từ Postman) hoặc các origin trong whitelist
         if (!origin || whitelist.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
@@ -30,14 +28,13 @@ const corsOptions = {
         }
     }
 };
-
 app.use(cors(corsOptions));
 app.use(express.json());
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
 mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 30000, 
-    socketTimeoutMS: 45000, 
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
 })
 .then(() => console.log('MongoDB Connected...'))
 .catch(err => console.error('MongoDB Connection Error:', err));
@@ -63,15 +60,11 @@ const isSameDay = (date1, date2) => {
 
 // --- CÁC API ENDPOINTS ---
 
-// 1. API lấy offers (Đã có phân trang)
+// 1. API lấy offers
 app.get('/api/offers', async (req, res) => {
     try {
         const { page = 1, limit = 20, keyword = '' } = req.query;
-        const params = {
-            page,
-            limit,
-            ...(keyword && { keyword })
-        };
+        const params = { page, limit, ...(keyword && { keyword }) };
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
             headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
             params: params,
@@ -80,13 +73,13 @@ app.get('/api/offers', async (req, res) => {
         res.status(200).json(response.data);
     } catch (error) {
         if (error.code === 'ECONNABORTED') {
-            return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade. Vui lòng thử lại sau.' });
+            return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade.' });
         }
-        res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade từ server.', error: error.message });
+        res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade.', error: error.message });
     }
 });
 
-// 2. API Lấy tất cả danh mục
+// 2. API Lấy danh mục
 app.get('/api/categories', async (req, res) => {
     try {
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
@@ -108,7 +101,7 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// 3. API để xử lý Đăng ký
+// 3. API Đăng ký
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -124,14 +117,21 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// 4. API để xử lý Đăng nhập
+// 4. API Đăng nhập
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         const user = await User.findOne({ username });
         if (!user) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
+
+        // *** SỬA LỖI: Chỉ so sánh mật khẩu nếu người dùng này có mật khẩu (không phải tài khoản Google) ***
+        if (!user.password) {
+            return res.status(400).json({ success: false, message: 'Tài khoản này được đăng ký qua Google. Vui lòng đăng nhập bằng Google.' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
+        
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
         res.status(200).json({ 
             success: true, 
@@ -139,11 +139,12 @@ app.post('/api/login', async (req, res) => {
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
+        console.error("Login Error:", error); // Thêm log để gỡ rối
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
     }
 });
 
-// 5. API Đăng nhập bằng Google
+// 5. API Đăng nhập Google
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     try {
@@ -172,7 +173,7 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
-// 6. API để xử lý yêu cầu rút tiền
+// 6. API Rút tiền
 app.post('/api/withdraw', async (req, res) => {
     const { bank, accountNumber, accountName, amount, userId } = req.body;
     try {
@@ -185,11 +186,8 @@ app.post('/api/withdraw', async (req, res) => {
         const newRow = [ new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }), bank, accountNumber, accountName, amount, 'Pending' ];
         const sheetName = "Trang tính1";
         await googleSheets.spreadsheets.values.append({
-            auth: googleSheetsAuth,
-            spreadsheetId,
-            range: `${sheetName}!A:F`,
-            valueInputOption: "USER_ENTERED",
-            resource: { values: [newRow] },
+            auth: googleSheetsAuth, spreadsheetId, range: `${sheetName}!A:F`,
+            valueInputOption: "USER_ENTERED", resource: { values: [newRow] },
         });
         
         user.coins -= amount;
@@ -202,7 +200,7 @@ app.post('/api/withdraw', async (req, res) => {
     }
 });
 
-// 7. API để người dùng nhận thưởng hàng ngày
+// 7. API Nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', async (req, res) => {
     const { userId } = req.body;
     try {
@@ -220,41 +218,33 @@ app.post('/api/user/claim-daily', async (req, res) => {
     }
 });
 
-// 8. API để người dùng nhận thưởng (ví dụ: xem quảng cáo)
+// 8. API Cộng xu (xem quảng cáo)
 app.post('/api/user/add-coins', async (req, res) => {
     const { userId, amountToAdd } = req.body; 
-
     if (!userId || !amountToAdd || amountToAdd <= 0) {
         return res.status(400).json({ success: false, message: 'Thông tin không hợp lệ.' });
     }
-
     if (amountToAdd > 10) { 
         return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
     }
-
     try {
         const updatedUser = await User.findByIdAndUpdate(
-            userId,
-            { $inc: { coins: amountToAdd } },
-            { new: true }
+            userId, { $inc: { coins: amountToAdd } }, { new: true }
         );
-
         if (!updatedUser) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
         }
-
         res.status(200).json({
             success: true,
             message: `Bạn đã được cộng ${amountToAdd} xu!`,
             newCoins: updatedUser.coins 
         });
-
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi cập nhật xu.' });
     }
 });
 
-// 9. API để Admin cộng xu
+// 9. API Admin cộng xu
 app.post('/api/admin/add-coins', async (req, res) => {
     const { targetUsername, amount, adminKey } = req.body;
     if (adminKey !== process.env.ADMIN_SECRET_KEY) {
@@ -262,9 +252,7 @@ app.post('/api/admin/add-coins', async (req, res) => {
     }
     try {
         const user = await User.findOneAndUpdate(
-            { username: targetUsername },
-            { $inc: { coins: amount } },
-            { new: true }
+            { username: targetUsername }, { $inc: { coins: amount } }, { new: true }
         );
         if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng mục tiêu.' });
         res.status(200).json({ success: true, message: `Đã cộng ${amount} xu cho ${targetUsername}. Số dư mới: ${user.coins}` });
