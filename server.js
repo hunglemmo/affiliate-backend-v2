@@ -16,9 +16,8 @@ const whitelist = [
     'http://localhost:3000', // Cho frontend khi chạy ở local
     'http://localhost:3001', // Một cổng local khác (nếu có)
     'http://localhost',      // Cho ứng dụng Capacitor (một số trường hợp)
-    'capacitor://localhost', // *** Dòng quan trọng nhất cho app di động ***
-    // Bạn có thể thêm tên miền frontend của bạn ở đây sau này
-    // Ví dụ: 'https://ten-app-cua-ban.vercel.app' 
+    'capacitor://localhost', // Cho ứng dụng Capacitor trên máy ảo
+    'https://localhost'      // *** SỬA LỖI: Thêm dòng này cho WebView an toàn ***
 ];
 
 const corsOptions = {
