@@ -11,16 +11,26 @@ const User = require('./models/User');
 const app = express();
 
 // --- Cấu hình Middleware ---
-const whitelist = ['http://localhost:3000', 'http://localhost:3001', 'http://localhost'];
+// DANH SÁCH CÁC ĐỊA CHỈ ĐƯỢC PHÉP TRUY CẬP API
+const whitelist = [
+    'http://localhost:3000', // Cho frontend khi chạy ở local
+    'http://localhost:3001', // Một cổng local khác (nếu có)
+    'http://localhost',      // Cho ứng dụng Capacitor (một số trường hợp)
+    'capacitor://localhost', // *** SỬA LỖI: Thêm dòng này cho ứng dụng Capacitor trên máy ảo ***
+    'https://affiliate-frontend-cua-ban.vercel.app' // THAY THẾ: Bằng tên miền Vercel của frontend sau này
+];
+
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    origin: function (origin, callback) {
+        // Cho phép các request không có origin (như từ Postman) hoặc các origin trong whitelist
+        if (!origin || whitelist.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
     }
-  }
 };
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
@@ -55,25 +65,25 @@ const isSameDay = (date1, date2) => {
 
 // 1. API lấy offers (Đã có phân trang)
 app.get('/api/offers', async (req, res) => {
-  try {
-    const { page = 1, limit = 20, keyword = '' } = req.query;
-    const params = {
-      page,
-      limit,
-      ...(keyword && { keyword })
-    };
-    const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
-      headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
-      params: params,
-      timeout: 15000
-    });
-    res.status(200).json(response.data);
-  } catch (error) {
-    if (error.code === 'ECONNABORTED') {
-      return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade. Vui lòng thử lại sau.' });
+    try {
+        const { page = 1, limit = 20, keyword = '' } = req.query;
+        const params = {
+            page,
+            limit,
+            ...(keyword && { keyword })
+        };
+        const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
+            headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
+            params: params,
+            timeout: 15000
+        });
+        res.status(200).json(response.data);
+    } catch (error) {
+        if (error.code === 'ECONNABORTED') {
+            return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade. Vui lòng thử lại sau.' });
+        }
+        res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade từ server.', error: error.message });
     }
-    res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade từ server.', error: error.message });
-  }
 });
 
 // 2. API Lấy tất cả danh mục
@@ -81,7 +91,7 @@ app.get('/api/categories', async (req, res) => {
     try {
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
             headers: { 'Authorization': `Token ${process.env.ACCESSTRADE_API_KEY}` },
-            params: { limit: 100 }, // SỬA LỖI: Giảm limit xuống 100 cho ổn định
+            params: { limit: 100 },
             timeout: 20000
         });
         const offers = response.data.data || [];
@@ -211,32 +221,28 @@ app.post('/api/user/claim-daily', async (req, res) => {
 });
 
 // 8. API để người dùng nhận thưởng (ví dụ: xem quảng cáo)
-app.post('/api/user/add-coins', async (req, res) => { // Đổi tên API cho rõ nghĩa hơn
-    // 1. Nhận vào số xu cần cộng, không phải tổng mới
+app.post('/api/user/add-coins', async (req, res) => {
     const { userId, amountToAdd } = req.body; 
 
     if (!userId || !amountToAdd || amountToAdd <= 0) {
         return res.status(400).json({ success: false, message: 'Thông tin không hợp lệ.' });
     }
 
-    // Giới hạn số xu có thể cộng trong một lần để tăng bảo mật
-    if (amountToAdd > 10) { // Ví dụ: chỉ cho phép cộng tối đa 10 xu mỗi lần xem quảng cáo
+    if (amountToAdd > 10) { 
         return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
     }
 
     try {
-        // 2. Dùng $inc để CỘNG DỒN một cách an toàn
         const updatedUser = await User.findByIdAndUpdate(
             userId,
             { $inc: { coins: amountToAdd } },
-            { new: true } // Tùy chọn này để lệnh trả về tài liệu đã được cập nhật
+            { new: true }
         );
 
         if (!updatedUser) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
         }
 
-        // 3. Trả về số xu mới nhất từ server
         res.status(200).json({
             success: true,
             message: `Bạn đã được cộng ${amountToAdd} xu!`,
