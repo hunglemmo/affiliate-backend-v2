@@ -11,24 +11,10 @@ const User = require('./models/User');
 const app = express();
 
 // --- Cấu hình Middleware ---
-const whitelist = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost',
-    'capacitor://localhost',
-    'https://localhost'
-];
-
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin || whitelist.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    }
-};
-app.use(cors(corsOptions));
+// Cho phép yêu cầu từ frontend trên localhost
+app.use(cors({
+    origin: 'http://localhost:3001'
+}));
 app.use(express.json());
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
@@ -124,7 +110,6 @@ app.post('/api/login', async (req, res) => {
         const user = await User.findOne({ username });
         if (!user) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
 
-        // *** SỬA LỖI: Chỉ so sánh mật khẩu nếu người dùng này có mật khẩu (không phải tài khoản Google) ***
         if (!user.password) {
             return res.status(400).json({ success: false, message: 'Tài khoản này được đăng ký qua Google. Vui lòng đăng nhập bằng Google.' });
         }
@@ -139,7 +124,7 @@ app.post('/api/login', async (req, res) => {
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
-        console.error("Login Error:", error); // Thêm log để gỡ rối
+        console.error("Login Error:", error);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
     }
 });
@@ -169,6 +154,7 @@ app.post('/api/auth/google', async (req, res) => {
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
+        console.error("Google Auth Error:", error);
         res.status(400).json({ success: false, message: 'Xác thực Google thất bại.' });
     }
 });
@@ -259,6 +245,12 @@ app.post('/api/admin/add-coins', async (req, res) => {
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
+});
+
+// Lắng nghe các kết nối đến server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
 
 // Xuất app để Vercel có thể sử dụng
