@@ -186,7 +186,7 @@ app.post('/api/withdraw', async (req, res) => {
         const newRow = [ new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }), bank, accountNumber, accountName, amount, 'Pending' ];
         const sheetName = "Trang tính1";
         await googleSheets.spreadsheets.values.append({
-            auth: googleSheetsAuth, spreadsheetId, range: `${sheetName}!A:F`,
+            auth: googleSheetsAuth, spreadsheetId, range: `${Trang tính1}!A:F`,
             valueInputOption: "USER_ENTERED", resource: { values: [newRow] },
         });
         
