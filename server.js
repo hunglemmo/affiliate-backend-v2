@@ -2,50 +2,54 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 require('dotenv').config();
-const { google } = require('googleapis');
-const { OAuth2Client } = require('google-auth-library');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const User = require('./models/User');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+// Import model mới để lưu lịch sử đổi thẻ
+const Redemption = require('../models/Redemption'); 
 
 const app = express();
 
 // --- Cấu hình Middleware ---
-const whitelist = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost',
-    'capacitor://localhost',
-    'https://localhost'
-];
-
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin || whitelist.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    }
-};
-app.use(cors(corsOptions));
+// Cho phép mọi nguồn gốc khi triển khai lên Vercel, an toàn hơn là dùng whitelist phức tạp
+app.use(cors());
 app.use(express.json());
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
-mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 30000,
-    socketTimeoutMS: 45000,
-})
-.then(() => console.log('MongoDB Connected...'))
-.catch(err => console.error('MongoDB Connection Error:', err));
+// Chỉ kết nối một lần để tối ưu trên Vercel
+if (!mongoose.connection.readyState) {
+    mongoose.connect(process.env.MONGODB_URI)
+    .then(() => console.log('MongoDB Connected...'))
+    .catch(err => console.error('MongoDB Connection Error:', err));
+}
 
-// --- Cấu hình Google ---
-const googleSheetsAuth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS),
-    scopes: "https://www.googleapis.com/auth/spreadsheets",
-});
-const spreadsheetId = process.env.SPREADSHEET_ID;
-const googleAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// --- Middleware Xác thực Token (Quan trọng) ---
+// Middleware này sẽ bảo vệ các API yêu cầu người dùng phải đăng nhập
+const protect = async (req, res, next) => {
+    let token;
+    // Kiểm tra xem header của yêu cầu có chứa token không
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+        try {
+            // Lấy token ra khỏi header ('Bearer <token>')
+            token = req.headers.authorization.split(' ')[1];
+            // Giải mã token để lấy userId
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            // Tìm người dùng trong database bằng userId và gán vào request
+            req.user = await User.findById(decoded.userId).select('-password');
+            if (!req.user) {
+                return res.status(401).json({ success: false, message: 'Người dùng không tồn tại' });
+            }
+            // Chuyển sang bước tiếp theo
+            next();
+        } catch (error) {
+            return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
+        }
+    }
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Không có quyền truy cập, vui lòng đăng nhập' });
+    }
+};
 
 // --- HÀM HỖ TRỢ ---
 const isSameDay = (date1, date2) => {
@@ -57,8 +61,7 @@ const isSameDay = (date1, date2) => {
            d1.getDate() === d2.getDate();
 };
 
-
-// --- CÁC API ENDPOINTS ---
+// --- CÁC API CÔNG KHAI (Không cần đăng nhập) ---
 
 // 1. API lấy offers
 app.get('/api/offers', async (req, res) => {
@@ -72,9 +75,6 @@ app.get('/api/offers', async (req, res) => {
         });
         res.status(200).json(response.data);
     } catch (error) {
-        if (error.code === 'ECONNABORTED') {
-            return res.status(504).json({ message: 'Không nhận được phản hồi từ AccessTrade.' });
-        }
         res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade.', error: error.message });
     }
 });
@@ -96,7 +96,6 @@ app.get('/api/categories', async (req, res) => {
         });
         res.status(200).json({ success: true, platforms: [...platformDomains] });
     } catch (error) {
-        console.error("Lỗi khi lấy danh mục:", error.message);
         res.status(500).json({ success: false, message: 'Không thể lấy danh sách danh mục.' });
     }
 });
@@ -117,36 +116,38 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// 4. API Đăng nhập
+// 4. API Đăng nhập -> Sẽ trả về Token
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         const user = await User.findOne({ username });
         if (!user) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
-
-        // *** SỬA LỖI: Chỉ so sánh mật khẩu nếu người dùng này có mật khẩu (không phải tài khoản Google) ***
         if (!user.password) {
             return res.status(400).json({ success: false, message: 'Tài khoản này được đăng ký qua Google. Vui lòng đăng nhập bằng Google.' });
         }
-
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
         
+        // Tạo token sau khi đăng nhập thành công
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
+
         res.status(200).json({ 
             success: true, 
             message: 'Đăng nhập thành công',
+            token: token, // Gửi token về cho frontend
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
-        console.error("Login Error:", error); // Thêm log để gỡ rối
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
     }
 });
 
-// 5. API Đăng nhập Google
+// 5. API Đăng nhập Google -> Sẽ trả về Token
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
+    const { OAuth2Client } = require('google-auth-library');
+    const googleAuthClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
     try {
         const ticket = await googleAuthClient.verifyIdToken({
             idToken: token,
@@ -162,10 +163,14 @@ app.post('/api/auth/google', async (req, res) => {
             user = new User({ username: email, googleId: googleId, referralCode: uniqueReferralCode });
             await user.save();
         }
+        
+        const authToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
+
         res.status(200).json({
             success: true,
             message: 'Đăng nhập thành công',
+            token: authToken, // Gửi token về cho frontend
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
@@ -173,39 +178,63 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
-// 6. API Rút tiền
-app.post('/api/withdraw', async (req, res) => {
-    const { bank, accountNumber, accountName, amount, userId } = req.body;
-    try {
-        const user = await User.findById(userId);
-        if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
-        if (user.coins < amount) return res.status(400).json({ success: false, message: 'Số dư không đủ.' });
+// --- API MỚI VÀ API ĐÃ SỬA (Yêu cầu đăng nhập) ---
 
-        const client = await googleSheetsAuth.getClient();
-        const googleSheets = google.sheets({ version: "v4", auth: client });
-        const newRow = [ new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }), bank, accountNumber, accountName, amount, 'Pending' ];
-        const sheetName = "Trang tính1";
-        await googleSheets.spreadsheets.values.append({
-            auth: googleSheetsAuth, spreadsheetId, range: `${sheetName}!A:F`,
-            valueInputOption: "USER_ENTERED", resource: { values: [newRow] },
-        });
-        
-        user.coins -= amount;
+// 6. API ĐỔI THẺ CÀO (Thay thế cho API Rút tiền)
+app.post('/api/redeem-card', protect, async (req, res) => {
+    const { cardType, amount } = req.body; // amount là mệnh giá VNĐ
+    const userId = req.user._id;
+
+    // Quy đổi: 100 xu = 1,000đ. Vậy 10,000đ sẽ cần 1,000 xu.
+    const requiredCoins = amount / 10; 
+
+    try {
+        const user = req.user;
+        if (user.coins < requiredCoins) {
+            return res.status(400).json({ success: false, message: 'Số xu không đủ để đổi thẻ này.' });
+        }
+
+        // Trừ xu của người dùng
+        user.coins -= requiredCoins;
         await user.save();
-        
-        res.status(200).json({ success: true, message: "Yêu cầu rút tiền đã được gửi thành công!" });
+
+        // Tạo một yêu cầu đổi thưởng mới trong database
+        const newRedemption = new Redemption({
+            user: userId,
+            cardType,
+            amount,
+            status: 'pending', // Trạng thái chờ bạn xử lý thủ công
+        });
+        await newRedemption.save();
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Yêu cầu đổi thẻ đã được gửi. Chúng tôi sẽ xử lý trong 24 giờ.",
+            newCoins: user.coins
+        });
+
     } catch (error) {
-        console.error("Lỗi khi ghi vào Google Sheet:", error.message);
-        res.status(500).json({ success: false, message: "Có lỗi xảy ra khi ghi dữ liệu vào Google Sheet." });
+        console.error("Lỗi khi đổi thẻ:", error.message);
+        res.status(500).json({ success: false, message: "Có lỗi xảy ra, vui lòng thử lại." });
     }
 });
 
-// 7. API Nhận thưởng hàng ngày
-app.post('/api/user/claim-daily', async (req, res) => {
-    const { userId } = req.body;
+// 7. API LẤY LỊCH SỬ ĐỔI THƯỞNG
+app.get('/api/redemption-history', protect, async (req, res) => {
     try {
-        const user = await User.findById(userId);
-        if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
+        // Tìm tất cả các yêu cầu đổi thưởng của người dùng hiện tại
+        const redemptions = await Redemption.find({ user: req.user._id }).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: redemptions });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Không thể lấy lịch sử đổi thưởng.' });
+    }
+});
+
+
+// 8. API Nhận thưởng hàng ngày
+app.post('/api/user/claim-daily', protect, async (req, res) => {
+    try {
+        const user = req.user;
         if (isSameDay(user.lastClaimedDaily, new Date())) {
             return res.status(400).json({ success: false, message: 'Bạn đã nhận thưởng hôm nay rồi.' });
         }
@@ -218,22 +247,18 @@ app.post('/api/user/claim-daily', async (req, res) => {
     }
 });
 
-// 8. API Cộng xu (xem quảng cáo)
-app.post('/api/user/add-coins', async (req, res) => {
-    const { userId, amountToAdd } = req.body; 
-    if (!userId || !amountToAdd || amountToAdd <= 0) {
-        return res.status(400).json({ success: false, message: 'Thông tin không hợp lệ.' });
-    }
-    if (amountToAdd > 10) { 
+// 9. API Cộng xu (xem quảng cáo)
+app.post('/api/user/add-coins', protect, async (req, res) => {
+    const { amountToAdd } = req.body; 
+    const userId = req.user._id;
+
+    if (!amountToAdd || amountToAdd <= 0 || amountToAdd > 10) { 
         return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
     }
     try {
         const updatedUser = await User.findByIdAndUpdate(
             userId, { $inc: { coins: amountToAdd } }, { new: true }
         );
-        if (!updatedUser) {
-            return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
-        }
         res.status(200).json({
             success: true,
             message: `Bạn đã được cộng ${amountToAdd} xu!`,
@@ -244,7 +269,7 @@ app.post('/api/user/add-coins', async (req, res) => {
     }
 });
 
-// 9. API Admin cộng xu
+// 10. API Admin cộng xu
 app.post('/api/admin/add-coins', async (req, res) => {
     const { targetUsername, amount, adminKey } = req.body;
     if (adminKey !== process.env.ADMIN_SECRET_KEY) {
