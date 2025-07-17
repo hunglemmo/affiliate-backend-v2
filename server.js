@@ -5,28 +5,45 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-// SỬA LỖI Ở ĐÂY: Sửa lại đường dẫn require cho đúng
+
+// ======================= SỬA LỖI DUY NHẤT TẠI ĐÂY =======================
+// Dựa trên cấu trúc file bạn gửi, file `server.js` và thư mục `models`
+// nằm cùng cấp. Vì vậy, đường dẫn đúng phải bắt đầu bằng './'
+// để chỉ "thư mục hiện tại".
 const User = require('./models/User');
-const Redemption = require('./models/Redemption'); 
+const Redemption = require('./models/Redemption');
+// =======================================================================
 
 const app = express();
 
 // --- Cấu hình Middleware ---
 app.use(cors({
-  origin: "*", 
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+    origin: "*",
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
 app.use(express.json());
 
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
-if (!mongoose.connection.readyState) {
-    mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('MongoDB Connected...'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
-}
+// Bọc trong một hàm async để xử lý kết nối tốt hơn và tránh crash ngầm
+const connectDB = async () => {
+    try {
+        if (!mongoose.connection.readyState) {
+            await mongoose.connect(process.env.MONGODB_URI);
+            console.log('MongoDB Connected...');
+        }
+    } catch (err) {
+        // Ghi lại lỗi chi tiết vào log của Vercel để bạn có thể xem
+        console.error('MongoDB Connection Error:', err.message);
+        // Dừng tiến trình nếu không kết nối được DB, Vercel sẽ tự khởi động lại
+        process.exit(1);
+    }
+};
+// Gọi hàm để kết nối
+connectDB();
+
 
 // --- Middleware Xác thực Token (Quan trọng) ---
 const protect = async (req, res, next) => {
@@ -73,6 +90,7 @@ app.get('/api/offers', async (req, res) => {
         });
         res.status(200).json(response.data);
     } catch (error) {
+        console.error('Error fetching offers:', error.message);
         res.status(500).json({ message: 'Lỗi khi kết nối đến AccessTrade.', error: error.message });
     }
 });
@@ -94,6 +112,7 @@ app.get('/api/categories', async (req, res) => {
         });
         res.status(200).json({ success: true, platforms: [...platformDomains] });
     } catch (error) {
+        console.error('Error fetching categories:', error.message);
         res.status(500).json({ success: false, message: 'Không thể lấy danh sách danh mục.' });
     }
 });
@@ -110,6 +129,7 @@ app.post('/api/register', async (req, res) => {
         await user.save();
         res.status(201).json({ success: true, message: 'Đăng ký thành công! Vui lòng đăng nhập.' });
     } catch (error) {
+        console.error('Error in /api/register:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng ký.'});
     }
 });
@@ -136,6 +156,7 @@ app.post('/api/login', async (req, res) => {
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
+        console.error('Error in /api/login:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
     }
 });
@@ -171,6 +192,7 @@ app.post('/api/auth/google', async (req, res) => {
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
+        console.error('Error in /api/auth/google:', error.message);
         res.status(400).json({ success: false, message: 'Xác thực Google thất bại.' });
     }
 });
@@ -203,6 +225,7 @@ app.post('/api/redeem-card', protect, async (req, res) => {
             newCoins: user.coins
         });
     } catch (error) {
+        console.error('Error in /api/redeem-card:', error.message);
         res.status(500).json({ success: false, message: "Có lỗi xảy ra, vui lòng thử lại." });
     }
 });
@@ -213,6 +236,7 @@ app.get('/api/redemption-history', protect, async (req, res) => {
         const redemptions = await Redemption.find({ user: req.user._id }).sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: redemptions });
     } catch (error) {
+        console.error('Error in /api/redemption-history:', error.message);
         res.status(500).json({ success: false, message: 'Không thể lấy lịch sử đổi thưởng.' });
     }
 });
@@ -229,6 +253,7 @@ app.post('/api/user/claim-daily', protect, async (req, res) => {
         await user.save();
         res.status(200).json({ success: true, newCoins: user.coins, message: 'Nhận thưởng thành công!' });
     } catch (error) {
+        console.error('Error in /api/user/claim-daily:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
 });
@@ -251,6 +276,7 @@ app.post('/api/user/add-coins', protect, async (req, res) => {
             newCoins: updatedUser.coins 
         });
     } catch (error) {
+        console.error('Error in /api/user/add-coins:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi cập nhật xu.' });
     }
 });
@@ -268,6 +294,7 @@ app.post('/api/admin/add-coins', async (req, res) => {
         if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng mục tiêu.' });
         res.status(200).json({ success: true, message: `Đã cộng ${amount} xu cho ${targetUsername}. Số dư mới: ${user.coins}` });
     } catch (error) {
+        console.error('Error in /api/admin/add-coins:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
 });
