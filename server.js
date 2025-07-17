@@ -6,18 +6,23 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-// Import model mới để lưu lịch sử đổi thẻ
 const Redemption = require('../models/Redemption'); 
 
 const app = express();
 
 // --- Cấu hình Middleware ---
-// Cho phép mọi nguồn gốc khi triển khai lên Vercel, an toàn hơn là dùng whitelist phức tạp
-app.use(cors());
+// SỬA LỖI Ở ĐÂY: Cấu hình CORS một cách tường minh hơn
+// để chấp nhận yêu cầu từ tên miền của frontend trên Vercel
+app.use(cors({
+  origin: "*", // Cho phép TẤT CẢ các nguồn gốc. An toàn nhất là thay "*" bằng URL của frontend.
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
 app.use(express.json());
 
+
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
-// Chỉ kết nối một lần để tối ưu trên Vercel
 if (!mongoose.connection.readyState) {
     mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('MongoDB Connected...'))
@@ -25,22 +30,16 @@ if (!mongoose.connection.readyState) {
 }
 
 // --- Middleware Xác thực Token (Quan trọng) ---
-// Middleware này sẽ bảo vệ các API yêu cầu người dùng phải đăng nhập
 const protect = async (req, res, next) => {
     let token;
-    // Kiểm tra xem header của yêu cầu có chứa token không
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
-            // Lấy token ra khỏi header ('Bearer <token>')
             token = req.headers.authorization.split(' ')[1];
-            // Giải mã token để lấy userId
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            // Tìm người dùng trong database bằng userId và gán vào request
             req.user = await User.findById(decoded.userId).select('-password');
             if (!req.user) {
                 return res.status(401).json({ success: false, message: 'Người dùng không tồn tại' });
             }
-            // Chuyển sang bước tiếp theo
             next();
         } catch (error) {
             return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
@@ -128,14 +127,13 @@ app.post('/api/login', async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
         
-        // Tạo token sau khi đăng nhập thành công
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
 
         res.status(200).json({ 
             success: true, 
             message: 'Đăng nhập thành công',
-            token: token, // Gửi token về cho frontend
+            token: token,
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
@@ -170,7 +168,7 @@ app.post('/api/auth/google', async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Đăng nhập thành công',
-            token: authToken, // Gửi token về cho frontend
+            token: authToken,
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
         });
     } catch (error) {
@@ -180,12 +178,10 @@ app.post('/api/auth/google', async (req, res) => {
     
 // --- API MỚI VÀ API ĐÃ SỬA (Yêu cầu đăng nhập) ---
 
-// 6. API ĐỔI THẺ CÀO (Thay thế cho API Rút tiền)
+// 6. API ĐỔI THẺ CÀO
 app.post('/api/redeem-card', protect, async (req, res) => {
-    const { cardType, amount } = req.body; // amount là mệnh giá VNĐ
+    const { cardType, amount } = req.body;
     const userId = req.user._id;
-
-    // Quy đổi: 100 xu = 1,000đ. Vậy 10,000đ sẽ cần 1,000 xu.
     const requiredCoins = amount / 10; 
 
     try {
@@ -193,28 +189,21 @@ app.post('/api/redeem-card', protect, async (req, res) => {
         if (user.coins < requiredCoins) {
             return res.status(400).json({ success: false, message: 'Số xu không đủ để đổi thẻ này.' });
         }
-
-        // Trừ xu của người dùng
         user.coins -= requiredCoins;
         await user.save();
-
-        // Tạo một yêu cầu đổi thưởng mới trong database
         const newRedemption = new Redemption({
             user: userId,
             cardType,
             amount,
-            status: 'pending', // Trạng thái chờ bạn xử lý thủ công
+            status: 'pending',
         });
         await newRedemption.save();
-
         res.status(200).json({ 
             success: true, 
             message: "Yêu cầu đổi thẻ đã được gửi. Chúng tôi sẽ xử lý trong 24 giờ.",
             newCoins: user.coins
         });
-
     } catch (error) {
-        console.error("Lỗi khi đổi thẻ:", error.message);
         res.status(500).json({ success: false, message: "Có lỗi xảy ra, vui lòng thử lại." });
     }
 });
@@ -222,14 +211,12 @@ app.post('/api/redeem-card', protect, async (req, res) => {
 // 7. API LẤY LỊCH SỬ ĐỔI THƯỞNG
 app.get('/api/redemption-history', protect, async (req, res) => {
     try {
-        // Tìm tất cả các yêu cầu đổi thưởng của người dùng hiện tại
         const redemptions = await Redemption.find({ user: req.user._id }).sort({ createdAt: -1 });
         res.status(200).json({ success: true, data: redemptions });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Không thể lấy lịch sử đổi thưởng.' });
     }
 });
-
 
 // 8. API Nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', protect, async (req, res) => {
