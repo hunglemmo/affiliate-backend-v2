@@ -5,16 +5,15 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-const Redemption = require('../models/Redemption'); 
+// SỬA LỖI Ở ĐÂY: Sửa lại đường dẫn require cho đúng
+const User = require('./models/User');
+const Redemption = require('./models/Redemption'); 
 
 const app = express();
 
 // --- Cấu hình Middleware ---
-// SỬA LỖI Ở ĐÂY: Cấu hình CORS một cách tường minh hơn
-// để chấp nhận yêu cầu từ tên miền của frontend trên Vercel
 app.use(cors({
-  origin: "*", // Cho phép TẤT CẢ các nguồn gốc. An toàn nhất là thay "*" bằng URL của frontend.
+  origin: "*", 
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 204
@@ -272,6 +271,7 @@ app.post('/api/admin/add-coins', async (req, res) => {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
 });
+
 
 // Xuất app để Vercel có thể sử dụng
 module.exports = app;
