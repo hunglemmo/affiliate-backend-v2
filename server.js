@@ -1,7 +1,6 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-// Dòng require('dotenv').config(); đã được xóa
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -25,7 +24,6 @@ app.use(express.json());
 const connectDB = async () => {
     try {
         if (!mongoose.connection.readyState) {
-            // Vercel sẽ tự động lấy biến này từ Environment Variables
             await mongoose.connect(process.env.MONGODB_URI);
             console.log('MongoDB Connected...');
         }
@@ -109,22 +107,61 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// 3. API Đăng ký
+// 3. API Đăng ký - NÂNG CẤP VỚI TÍNH NĂNG GIỚI THIỆU
 app.post('/api/register', async (req, res) => {
-    const { username, password } = req.body;
+    // Thêm referralCode vào các biến lấy từ body
+    const { username, password, referralCode } = req.body;
     try {
-        if (!username || !password) return res.status(400).json({ success: false, message: 'Vui lòng nhập đủ thông tin.' });
+        if (!username || !password) {
+            return res.status(400).json({ success: false, message: 'Vui lòng nhập đủ thông tin.' });
+        }
         let user = await User.findOne({ username });
-        if (user) return res.status(400).json({ success: false, message: 'Tên đăng nhập đã tồn tại.' });
+        if (user) {
+            return res.status(400).json({ success: false, message: 'Tên đăng nhập đã tồn tại.' });
+        }
+
+        let initialCoins = 0; // Số xu ban đầu mặc định là 0
+
+        // Xử lý mã giới thiệu nếu người dùng có nhập
+        if (referralCode) {
+            // Tìm người giới thiệu bằng mã của họ (xóa khoảng trắng, chuyển thành chữ hoa để khớp)
+            const referrer = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
+            
+            if (referrer) {
+                // Nếu tìm thấy, cộng 100 xu cho người giới thiệu
+                referrer.coins += 100;
+                await referrer.save();
+                
+                // Đặt 100 xu ban đầu cho người dùng mới
+                initialCoins = 100;
+                console.log(`User ${referrer.username} referred ${username}. Both get 100 coins.`);
+            } else {
+                // Ghi lại log nếu không tìm thấy mã, nhưng vẫn tiếp tục đăng ký
+                console.log(`Referral code "${referralCode}" not found. No bonus coins awarded.`);
+            }
+        }
+
+        // Tạo mã giới thiệu duy nhất cho người dùng mới
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-        user = new User({ username, password, referralCode: uniqueReferralCode });
+        
+        // Tạo người dùng mới với số xu ban đầu đã được xác định
+        user = new User({ 
+            username, 
+            password, 
+            referralCode: uniqueReferralCode,
+            coins: initialCoins // Gán số xu ban đầu
+        });
+        
         await user.save();
+        
         res.status(201).json({ success: true, message: 'Đăng ký thành công! Vui lòng đăng nhập.' });
+
     } catch (error) {
         console.error('Error in /api/register:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng ký.'});
     }
 });
+
 
 // 4. API Đăng nhập -> Sẽ trả về Token
 app.post('/api/login', async (req, res) => {
