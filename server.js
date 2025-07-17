@@ -1,18 +1,13 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-require('dotenv').config();
+// Dòng require('dotenv').config(); đã được xóa
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// ======================= SỬA LỖI DUY NHẤT TẠI ĐÂY =======================
-// Dựa trên cấu trúc file bạn gửi, file `server.js` và thư mục `models`
-// nằm cùng cấp. Vì vậy, đường dẫn đúng phải bắt đầu bằng './'
-// để chỉ "thư mục hiện tại".
 const User = require('./models/User');
 const Redemption = require('./models/Redemption');
-// =======================================================================
 
 const app = express();
 
@@ -27,21 +22,18 @@ app.use(express.json());
 
 
 // --- Kết nối Cơ sở dữ liệu MongoDB ---
-// Bọc trong một hàm async để xử lý kết nối tốt hơn và tránh crash ngầm
 const connectDB = async () => {
     try {
         if (!mongoose.connection.readyState) {
+            // Vercel sẽ tự động lấy biến này từ Environment Variables
             await mongoose.connect(process.env.MONGODB_URI);
             console.log('MongoDB Connected...');
         }
     } catch (err) {
-        // Ghi lại lỗi chi tiết vào log của Vercel để bạn có thể xem
         console.error('MongoDB Connection Error:', err.message);
-        // Dừng tiến trình nếu không kết nối được DB, Vercel sẽ tự khởi động lại
         process.exit(1);
     }
 };
-// Gọi hàm để kết nối
 connectDB();
 
 
