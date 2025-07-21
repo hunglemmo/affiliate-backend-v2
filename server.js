@@ -109,7 +109,6 @@ app.get('/api/categories', async (req, res) => {
 
 // 3. API Đăng ký - NÂNG CẤP VỚI TÍNH NĂNG GIỚI THIỆU
 app.post('/api/register', async (req, res) => {
-    // Thêm referralCode vào các biến lấy từ body
     const { username, password, referralCode } = req.body;
     try {
         if (!username || !password) {
@@ -120,36 +119,30 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Tên đăng nhập đã tồn tại.' });
         }
 
-        let initialCoins = 0; // Số xu ban đầu mặc định là 0
+        let initialCoins = 0;
 
-        // Xử lý mã giới thiệu nếu người dùng có nhập
         if (referralCode) {
-            // Tìm người giới thiệu bằng mã của họ (xóa khoảng trắng, chuyển thành chữ hoa để khớp)
             const referrer = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
             
             if (referrer) {
-                // Nếu tìm thấy, cộng 100 xu cho người giới thiệu
                 referrer.coins += 100;
                 await referrer.save();
-                
-                // Đặt 100 xu ban đầu cho người dùng mới
                 initialCoins = 100;
                 console.log(`User ${referrer.username} referred ${username}. Both get 100 coins.`);
             } else {
-                // Ghi lại log nếu không tìm thấy mã, nhưng vẫn tiếp tục đăng ký
                 console.log(`Referral code "${referralCode}" not found. No bonus coins awarded.`);
             }
         }
 
-        // Tạo mã giới thiệu duy nhất cho người dùng mới
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // Tạo người dùng mới với số xu ban đầu đã được xác định
+        // SỬA LẠI Ở ĐÂY: Thêm lastClaimedDaily: null cho người dùng mới
         user = new User({ 
             username, 
             password, 
             referralCode: uniqueReferralCode,
-            coins: initialCoins // Gán số xu ban đầu
+            coins: initialCoins,
+            lastClaimedDaily: null // Đảm bảo người dùng mới có thể nhận thưởng
         });
         
         await user.save();
@@ -207,7 +200,14 @@ app.post('/api/auth/google', async (req, res) => {
             let userByEmail = await User.findOne({ username: email });
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-            user = new User({ username: email, googleId: googleId, referralCode: uniqueReferralCode });
+            
+            // SỬA LẠI Ở ĐÂY: Thêm lastClaimedDaily: null cho người dùng mới đăng nhập bằng Google
+            user = new User({ 
+                username: email, 
+                googleId: googleId, 
+                referralCode: uniqueReferralCode,
+                lastClaimedDaily: null // Đảm bảo người dùng mới có thể nhận thưởng
+            });
             await user.save();
         }
         
@@ -292,7 +292,7 @@ app.post('/api/user/add-coins', protect, async (req, res) => {
     const { amountToAdd } = req.body; 
     const userId = req.user._id;
 
-    if (!amountToAdd || amountToAdd <= 0 || amountToAdd > 10) { 
+    if (!amountToAdd || amountToAdd <= 0 || amountToAdd > 100) { // Sửa giới hạn thành 100
         return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
     }
     try {
