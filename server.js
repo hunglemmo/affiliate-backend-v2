@@ -61,7 +61,6 @@ const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     const d1 = new Date(date1);
     const d2 = new Date(date2);
-
     // So sánh dựa trên ngày/tháng/năm của múi giờ UTC
     return d1.getUTCFullYear() === d2.getUTCFullYear() &&
            d1.getUTCMonth() === d2.getUTCMonth() &&
@@ -118,8 +117,7 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Tên đăng nhập đã tồn tại.' });
         }
 
-        // SỬA LẠI: Mặc định 100 xu cho tất cả user mới
-        let initialCoins = 100; 
+        let initialCoins = 100;
 
         if (referralCode) {
             const referrer = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
@@ -127,7 +125,6 @@ app.post('/api/register', async (req, res) => {
             if (referrer) {
                 referrer.coins += 100;
                 await referrer.save();
-                // Người được giới thiệu cũng nhận 100 xu (đã set ở trên)
                 console.log(`User ${referrer.username} referred ${username}. Both get 100 coins.`);
             }
         }
@@ -168,12 +165,16 @@ app.post('/api/login', async (req, res) => {
         
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
 
-        res.status(200).json({ 
+        // THÊM VÀO: Khối code chẩn đoán
+        const responseData = { 
             success: true, 
             message: 'Đăng nhập thành công',
             token: token,
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
-        });
+        };
+        console.log("BACKEND LOGIN RESPONSE:", JSON.stringify(responseData, null, 2));
+        res.status(200).json(responseData);
+
     } catch (error) {
         console.error('Error in /api/login:', error.message);
         res.status(500).json({ success: false, message: 'Lỗi máy chủ khi đăng nhập.'});
@@ -197,12 +198,11 @@ app.post('/api/auth/google', async (req, res) => {
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
             
-            // SỬA LẠI: Mặc định 100 xu cho user Google mới
             user = new User({ 
                 username: email, 
                 googleId: googleId, 
                 referralCode: uniqueReferralCode,
-                coins: 100, 
+                coins: 100,
                 lastClaimedDaily: null
             });
             await user.save();
@@ -212,12 +212,16 @@ app.post('/api/auth/google', async (req, res) => {
 
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
 
-        res.status(200).json({
+        // THÊM VÀO: Khối code chẩn đoán
+        const responseData = {
             success: true,
             message: 'Đăng nhập thành công',
             token: authToken,
             user: { id: user._id, username: user.username, referralCode: user.referralCode, coins: user.coins, canClaimBonus }
-        });
+        };
+        console.log("BACKEND GOOGLE RESPONSE:", JSON.stringify(responseData, null, 2));
+        res.status(200).json(responseData);
+
     } catch (error) {
         console.error('Error in /api/auth/google:', error.message);
         res.status(400).json({ success: false, message: 'Xác thực Google thất bại.' });
