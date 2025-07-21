@@ -61,9 +61,11 @@ const isSameDay = (date1, date2) => {
     if (!date1 || !date2) return false;
     const d1 = new Date(date1);
     const d2 = new Date(date2);
-    return d1.getFullYear() === d2.getFullYear() &&
-           d1.getMonth() === d2.getMonth() &&
-           d1.getDate() === d2.getDate();
+
+    // So sánh dựa trên ngày/tháng/năm của múi giờ UTC
+    return d1.getUTCFullYear() === d2.getUTCFullYear() &&
+           d1.getUTCMonth() === d2.getUTCMonth() &&
+           d1.getUTCDate() === d2.getUTCDate();
 };
 
 // --- CÁC API CÔNG KHAI (Không cần đăng nhập) ---
