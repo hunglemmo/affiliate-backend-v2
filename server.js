@@ -68,7 +68,6 @@ const isSameDay = (date1, date2) => {
 
 // --- CÁC API CÔNG KHAI (Không cần đăng nhập) ---
 
-// 1. API lấy offers
 app.get('/api/offers', async (req, res) => {
     try {
         const { page = 1, limit = 20, keyword = '' } = req.query;
@@ -85,7 +84,6 @@ app.get('/api/offers', async (req, res) => {
     }
 });
 
-// 2. API Lấy danh mục
 app.get('/api/categories', async (req, res) => {
     try {
         const response = await axios.get('https://api.accesstrade.vn/v1/offers_informations', {
@@ -107,7 +105,6 @@ app.get('/api/categories', async (req, res) => {
     }
 });
 
-// 3. API Đăng ký - NÂNG CẤP VỚI TÍNH NĂNG GIỚI THIỆU
 app.post('/api/register', async (req, res) => {
     const { username, password, referralCode } = req.body;
     try {
@@ -119,7 +116,8 @@ app.post('/api/register', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Tên đăng nhập đã tồn tại.' });
         }
 
-        let initialCoins = 0;
+        // SỬA LẠI: Mặc định 100 xu cho tất cả user mới
+        let initialCoins = 100; 
 
         if (referralCode) {
             const referrer = await User.findOne({ referralCode: referralCode.trim().toUpperCase() });
@@ -127,22 +125,19 @@ app.post('/api/register', async (req, res) => {
             if (referrer) {
                 referrer.coins += 100;
                 await referrer.save();
-                initialCoins = 100;
+                // Người được giới thiệu cũng nhận 100 xu (đã set ở trên)
                 console.log(`User ${referrer.username} referred ${username}. Both get 100 coins.`);
-            } else {
-                console.log(`Referral code "${referralCode}" not found. No bonus coins awarded.`);
             }
         }
 
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // SỬA LẠI Ở ĐÂY: Thêm lastClaimedDaily: null cho người dùng mới
         user = new User({ 
             username, 
             password, 
             referralCode: uniqueReferralCode,
             coins: initialCoins,
-            lastClaimedDaily: null // Đảm bảo người dùng mới có thể nhận thưởng
+            lastClaimedDaily: null
         });
         
         await user.save();
@@ -156,7 +151,6 @@ app.post('/api/register', async (req, res) => {
 });
 
 
-// 4. API Đăng nhập -> Sẽ trả về Token
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -169,6 +163,7 @@ app.post('/api/login', async (req, res) => {
         if (!isMatch) return res.status(400).json({ success: false, message: 'Sai tên đăng nhập hoặc mật khẩu' });
         
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
 
         res.status(200).json({ 
@@ -183,7 +178,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 5. API Đăng nhập Google -> Sẽ trả về Token
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     const { OAuth2Client } = require('google-auth-library');
@@ -201,17 +195,19 @@ app.post('/api/auth/google', async (req, res) => {
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
             
-            // SỬA LẠI Ở ĐÂY: Thêm lastClaimedDaily: null cho người dùng mới đăng nhập bằng Google
+            // SỬA LẠI: Mặc định 100 xu cho user Google mới
             user = new User({ 
                 username: email, 
                 googleId: googleId, 
                 referralCode: uniqueReferralCode,
-                lastClaimedDaily: null // Đảm bảo người dùng mới có thể nhận thưởng
+                coins: 100, 
+                lastClaimedDaily: null
             });
             await user.save();
         }
         
         const authToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
         const canClaimBonus = !isSameDay(user.lastClaimedDaily, new Date());
 
         res.status(200).json({
@@ -226,9 +222,8 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
-// --- API MỚI VÀ API ĐÃ SỬA (Yêu cầu đăng nhập) ---
+// --- API Yêu cầu đăng nhập ---
 
-// 6. API ĐỔI THẺ CÀO
 app.post('/api/redeem-card', protect, async (req, res) => {
     const { cardType, amount } = req.body;
     const userId = req.user._id;
@@ -259,7 +254,6 @@ app.post('/api/redeem-card', protect, async (req, res) => {
     }
 });
 
-// 7. API LẤY LỊCH SỬ ĐỔI THƯỞNG
 app.get('/api/redemption-history', protect, async (req, res) => {
     try {
         const redemptions = await Redemption.find({ user: req.user._id }).sort({ createdAt: -1 });
@@ -270,7 +264,6 @@ app.get('/api/redemption-history', protect, async (req, res) => {
     }
 });
 
-// 8. API Nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', protect, async (req, res) => {
     try {
         const user = req.user;
@@ -287,12 +280,11 @@ app.post('/api/user/claim-daily', protect, async (req, res) => {
     }
 });
 
-// 9. API Cộng xu (xem quảng cáo)
 app.post('/api/user/add-coins', protect, async (req, res) => {
     const { amountToAdd } = req.body; 
     const userId = req.user._id;
 
-    if (!amountToAdd || amountToAdd <= 0 || amountToAdd > 100) { // Sửa giới hạn thành 100
+    if (!amountToAdd || amountToAdd <= 0 || amountToAdd > 100) { 
         return res.status(400).json({ success: false, message: 'Số xu cộng vào không hợp lệ.' });
     }
     try {
@@ -310,7 +302,6 @@ app.post('/api/user/add-coins', protect, async (req, res) => {
     }
 });
 
-// 10. API Admin cộng xu
 app.post('/api/admin/add-coins', async (req, res) => {
     const { targetUsername, amount, adminKey } = req.body;
     if (adminKey !== process.env.ADMIN_SECRET_KEY) {
