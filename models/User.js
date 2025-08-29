@@ -8,8 +8,8 @@ const UserSchema = new mongoose.Schema({
     referralCode: { type: String, unique: true },
     coins: { type: Number, default: 100 },
     
-    // SỬA LẠI TÊN TRƯỜNG NÀY ĐỂ KHỚP VỚI SERVER.JS
-    lastClaimedDate: { type: Date, default: null }, 
+    // SỬA LẠI: Đặt giá trị mặc định là một ngày trong quá khứ để đảm bảo tài khoản mới luôn được nhận thưởng.
+    lastClaimedDate: { type: Date, default: () => new Date(0) }, // Default to Unix epoch (1970-01-01)
     
     favorites: {
         type: [String],
