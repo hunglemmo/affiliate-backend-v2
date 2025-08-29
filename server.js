@@ -42,7 +42,6 @@ const protect = async (req, res, next) => {
         try {
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            // SỬA LẠI: Gắn toàn bộ user object vào req để tái sử dụng
             req.user = await User.findById(decoded.userId).select('-password');
             if (!req.user) {
                 return res.status(401).json({ success: false, message: 'Người dùng không tồn tại' });
@@ -57,23 +56,22 @@ const protect = async (req, res, next) => {
     }
 };
 
-// --- HÀM HỖ TRỢ ĐÃ SỬA LẠI ---
-// Hàm này sẽ kiểm tra xem có thể nhận thưởng không
+// --- HÀM HỖ TRỢ ---
 const canUserClaimBonus = (lastClaimedDate) => {
     if (!lastClaimedDate) {
-        return true; // Nếu chưa nhận lần nào -> được nhận
+        return true;
     }
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Đưa về 00:00:00 của ngày hôm nay (theo giờ server)
+    today.setHours(0, 0, 0, 0);
 
     const lastClaimed = new Date(lastClaimedDate);
-    lastClaimed.setHours(0, 0, 0, 0); // Đưa về 00:00:00 của ngày nhận cuối
+    lastClaimed.setHours(0, 0, 0, 0);
 
     return today.getTime() > lastClaimed.getTime();
 };
 
 
-// --- CÁC API CÔNG KHAI (Không cần đăng nhập) ---
+// --- CÁC API CÔNG KHAI ---
 
 // 1. API lấy offers
 app.get('/api/offers', async (req, res) => {
@@ -134,19 +132,17 @@ app.post('/api/register', async (req, res) => {
             if (referrer) {
                 referrer.coins += 100;
                 await referrer.save();
-                console.log(`User ${referrer.username} referred ${username}. Both get 100 coins.`);
             }
         }
 
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         
+        // SỬA LẠI: Xóa dòng `lastClaimedDate: null` để Mongoose tự dùng giá trị default
         user = new User({ 
             username, 
             password, 
             referralCode: uniqueReferralCode,
             coins: initialCoins,
-            // Đổi tên trường cho nhất quán
-            lastClaimedDate: null 
         });
         
         await user.save();
@@ -160,7 +156,7 @@ app.post('/api/register', async (req, res) => {
 });
 
 
-// 4. API Đăng nhập -> SỬA LẠI LOGIC KIỂM TRA NGÀY
+// 4. API Đăng nhập
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -175,7 +171,6 @@ app.post('/api/login', async (req, res) => {
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         
         const userObject = user.toObject();
-        // SỬA LẠI: Dùng hàm hỗ trợ mới
         userObject.canClaimBonus = canUserClaimBonus(user.lastClaimedDate);
         delete userObject.password;
 
@@ -191,7 +186,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 5. API Đăng nhập Google -> SỬA LẠI LOGIC KIỂM TRA NGÀY
+// 5. API Đăng nhập Google
 app.post('/api/auth/google', async (req, res) => {
     const { token } = req.body;
     const { OAuth2Client } = require('google-auth-library');
@@ -209,13 +204,12 @@ app.post('/api/auth/google', async (req, res) => {
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
             
+            // SỬA LẠI: Xóa dòng `lastClaimedDate: null` để Mongoose tự dùng giá trị default
             user = new User({ 
                 username: email, 
                 googleId: googleId, 
                 referralCode: uniqueReferralCode,
                 coins: 100,
-                // Đổi tên trường cho nhất quán
-                lastClaimedDate: null
             });
             await user.save();
         }
@@ -223,7 +217,6 @@ app.post('/api/auth/google', async (req, res) => {
         const authToken = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
         const userObject = user.toObject();
-        // SỬA LẠI: Dùng hàm hỗ trợ mới
         userObject.canClaimBonus = canUserClaimBonus(user.lastClaimedDate);
         
         res.status(200).json({
@@ -238,34 +231,26 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
-// --- API MỚI VÀ API ĐÃ SỬA (Yêu cầu đăng nhập) ---
+// --- API Yêu cầu đăng nhập ---
 
-// =================================================================
-// START: SỬA LỖI NHẬN THƯỞNG HẰNG NGÀY
-// =================================================================
-
-// 6. API MỚI: Kiểm tra trạng thái nhận thưởng
+// 6. API Kiểm tra trạng thái nhận thưởng
 app.get('/api/user/status', protect, (req, res) => {
-    // Middleware `protect` đã lấy thông tin user và gắn vào `req.user`
     const user = req.user;
     const canClaim = canUserClaimBonus(user.lastClaimedDate);
     res.status(200).json({ success: true, canClaimBonus: canClaim });
 });
 
-// 7. API Nhận thưởng hàng ngày (SỬA LẠI LOGIC)
+// 7. API Nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', protect, async (req, res) => {
     try {
         const user = req.user;
-        // SỬA LẠI: Dùng hàm hỗ trợ mới để kiểm tra
         if (!canUserClaimBonus(user.lastClaimedDate)) {
             return res.status(400).json({ success: false, message: 'Bạn đã nhận thưởng hôm nay rồi.' });
         }
         
-        // Cập nhật xu và ngày nhận thưởng
         user.coins += 10;
-        user.lastClaimedDate = new Date(); // Cập nhật ngày nhận thưởng
+        user.lastClaimedDate = new Date();
         
-        // Lưu lại user vào database
         await user.save();
         
         res.status(200).json({ success: true, newCoins: user.coins, message: 'Nhận 10 xu thành công!' });
@@ -274,11 +259,6 @@ app.post('/api/user/claim-daily', protect, async (req, res) => {
         res.status(500).json({ success: false, message: 'Lỗi máy chủ.' });
     }
 });
-
-// =================================================================
-// END: SỬA LỖI NHẬN THƯỞNG HẰNG NGÀY
-// =================================================================
-
 
 // 8. API ĐỔI THẺ CÀO
 app.post('/api/redeem-card', protect, async (req, res) => {
