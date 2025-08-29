@@ -73,6 +73,7 @@ const canUserClaimBonus = (lastClaimedDate) => {
 
 // --- CÁC API CÔNG KHAI ---
 
+// ... (Các API từ 1 đến 5 giữ nguyên, không thay đổi)
 // 1. API lấy offers
 app.get('/api/offers', async (req, res) => {
     try {
@@ -137,13 +138,12 @@ app.post('/api/register', async (req, res) => {
 
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // SỬA LẠI: Gán trực tiếp giá trị ngày mặc định để đảm bảo hoạt động
         user = new User({ 
             username, 
             password, 
             referralCode: uniqueReferralCode,
             coins: initialCoins,
-            lastClaimedDate: new Date(0) // Gán trực tiếp ngày 01/01/1970
+            lastClaimedDate: new Date(0)
         });
         
         await user.save();
@@ -205,13 +205,12 @@ app.post('/api/auth/google', async (req, res) => {
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
             
-            // SỬA LẠI: Gán trực tiếp giá trị ngày mặc định để đảm bảo hoạt động
             user = new User({ 
                 username: email, 
                 googleId: googleId, 
                 referralCode: uniqueReferralCode,
                 coins: 100,
-                lastClaimedDate: new Date(0) // Gán trực tiếp ngày 01/01/1970
+                lastClaimedDate: new Date(0)
             });
             await user.save();
         }
@@ -233,19 +232,28 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
     
+
 // --- API Yêu cầu đăng nhập ---
 
-// 6. API Kiểm tra trạng thái nhận thưởng
+// 6. THÊM MỚI: API Lấy thông tin người dùng hiện tại (để phục hồi phiên)
+app.get('/api/user/profile', protect, (req, res) => {
+    const user = req.user.toObject();
+    user.canClaimBonus = canUserClaimBonus(req.user.lastClaimedDate);
+    res.status(200).json({ success: true, user });
+});
+
+// 7. API Kiểm tra trạng thái nhận thưởng
 app.get('/api/user/status', protect, (req, res) => {
     const user = req.user;
     const canClaim = canUserClaimBonus(user.lastClaimedDate);
     res.status(200).json({ success: true, canClaimBonus: canClaim });
 });
 
-// 7. API Nhận thưởng hàng ngày
+// 8. API Nhận thưởng hàng ngày
 app.post('/api/user/claim-daily', protect, async (req, res) => {
     try {
-        const user = req.user;
+        // Lấy lại user từ DB để đảm bảo dữ liệu mới nhất
+        const user = await User.findById(req.user._id);
         if (!canUserClaimBonus(user.lastClaimedDate)) {
             return res.status(400).json({ success: false, message: 'Bạn đã nhận thưởng hôm nay rồi.' });
         }
@@ -262,14 +270,15 @@ app.post('/api/user/claim-daily', protect, async (req, res) => {
     }
 });
 
-// 8. API ĐỔI THẺ CÀO
+// ... (Các API từ 9 đến 12 giữ nguyên, không thay đổi)
+// 9. API ĐỔI THẺ CÀO
 app.post('/api/redeem-card', protect, async (req, res) => {
     const { cardType, amount } = req.body;
     const userId = req.user._id;
     const requiredCoins = amount / 10; 
 
     try {
-        const user = req.user;
+        const user = await User.findById(userId);
         if (user.coins < requiredCoins) {
             return res.status(400).json({ success: false, message: 'Số xu không đủ để đổi thẻ này.' });
         }
@@ -293,7 +302,7 @@ app.post('/api/redeem-card', protect, async (req, res) => {
     }
 });
 
-// 9. API LẤY LỊCH SỬ ĐỔI THƯỞNG
+// 10. API LẤY LỊCH SỬ ĐỔI THƯỞNG
 app.get('/api/redemption-history', protect, async (req, res) => {
     try {
         const redemptions = await Redemption.find({ user: req.user._id }).sort({ createdAt: -1 });
@@ -304,7 +313,7 @@ app.get('/api/redemption-history', protect, async (req, res) => {
     }
 });
 
-// 10. API Cộng xu (xem quảng cáo)
+// 11. API Cộng xu (xem quảng cáo)
 app.post('/api/user/add-coins', protect, async (req, res) => {
     const { amountToAdd } = req.body; 
     const userId = req.user._id;
@@ -327,7 +336,7 @@ app.post('/api/user/add-coins', protect, async (req, res) => {
     }
 });
 
-// 11. API Admin cộng xu
+// 12. API Admin cộng xu
 app.post('/api/admin/add-coins', async (req, res) => {
     const { targetUsername, amount, adminKey } = req.body;
     if (adminKey !== process.env.ADMIN_SECRET_KEY) {
