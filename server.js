@@ -137,12 +137,13 @@ app.post('/api/register', async (req, res) => {
 
         const uniqueReferralCode = username.toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // SỬA LẠI: Xóa dòng `lastClaimedDate: null` để Mongoose tự dùng giá trị default
+        // SỬA LẠI: Gán trực tiếp giá trị ngày mặc định để đảm bảo hoạt động
         user = new User({ 
             username, 
             password, 
             referralCode: uniqueReferralCode,
             coins: initialCoins,
+            lastClaimedDate: new Date(0) // Gán trực tiếp ngày 01/01/1970
         });
         
         await user.save();
@@ -204,12 +205,13 @@ app.post('/api/auth/google', async (req, res) => {
             if (userByEmail) return res.status(400).json({ success: false, message: 'Email này đã được dùng để đăng ký tài khoản thường. Vui lòng đăng nhập bằng mật khẩu.' });
             const uniqueReferralCode = email.split('@')[0].toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
             
-            // SỬA LẠI: Xóa dòng `lastClaimedDate: null` để Mongoose tự dùng giá trị default
+            // SỬA LẠI: Gán trực tiếp giá trị ngày mặc định để đảm bảo hoạt động
             user = new User({ 
                 username: email, 
                 googleId: googleId, 
                 referralCode: uniqueReferralCode,
                 coins: 100,
+                lastClaimedDate: new Date(0) // Gán trực tiếp ngày 01/01/1970
             });
             await user.save();
         }
